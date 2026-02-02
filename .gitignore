@@ -1,0 +1,19 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SSO state
+sso_state.json
+
+# Environment file (contains secrets)
+.env
+
+# Null file
+nul
+
+# Key file (contains secrets)
+key.txt
