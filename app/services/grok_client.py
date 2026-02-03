@@ -13,6 +13,13 @@ from dataclasses import dataclass, field
 import aiohttp
 from aiohttp_socks import ProxyConnector
 
+try:
+    from curl_cffi import requests as curl_requests
+    CURL_CFFI_AVAILABLE = True
+except ImportError:
+    CURL_CFFI_AVAILABLE = False
+    curl_requests = None
+
 from app.core.config import settings
 from app.core.logger import logger
 
@@ -105,11 +112,62 @@ class GrokImagineClient:
         # 最终版本是 .jpg 格式，大小通常 > 100KB
         return url.endswith('.jpg') and blob_size > 100000
 
+    async def _verify_age(self, sso: str) -> bool:
+        """验证年龄 - 使用 curl_cffi 模拟浏览器请求"""
+        if not CURL_CFFI_AVAILABLE:
+            logger.warning("[Grok] curl_cffi 未安装，跳过年龄验证")
+            return False
+
+        if not settings.CF_CLEARANCE:
+            logger.warning("[Grok] CF_CLEARANCE 未配置，跳过年龄验证")
+            return False
+
+        cookie_str = f"sso={sso}; sso-rw={sso}; cf_clearance={settings.CF_CLEARANCE}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            "Origin": "https://grok.com",
+            "Referer": "https://grok.com/",
+            "Accept": "*/*",
+            "Cookie": cookie_str,
+            "Content-Type": "application/json",
+        }
+
+        proxy = settings.PROXY_URL or settings.HTTP_PROXY or settings.HTTPS_PROXY
+
+        logger.info("[Grok] 正在进行年龄验证...")
+
+        try:
+            # 在线程池中运行同步的 curl_cffi 请求
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(
+                None,
+                lambda: curl_requests.post(
+                    "https://grok.com/rest/auth/set-birth-date",
+                    headers=headers,
+                    json={"birthDate": "2001-01-01T16:00:00.000Z"},
+                    impersonate="chrome133a",
+                    proxy=proxy,
+                    verify=False
+                )
+            )
+
+            if resp.status_code == 200:
+                logger.info(f"[Grok] 年龄验证成功 (状态码: {resp.status_code})")
+                return True
+            else:
+                logger.warning(f"[Grok] 年龄验证响应: {resp.status_code} - {resp.text[:200]}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[Grok] 年龄验证失败: {e}")
+            return False
+
     async def generate(
         self,
         prompt: str,
         aspect_ratio: str = "2:3",
-        n: int = 4,
+        n: int = None,
         enable_nsfw: bool = True,
         sso: Optional[str] = None,
         max_retries: int = 5,
@@ -121,7 +179,7 @@ class GrokImagineClient:
         Args:
             prompt: 提示词
             aspect_ratio: 宽高比 (1:1, 2:3, 3:2)
-            n: 生成数量
+            n: 生成数量，如果不指定则使用配置的默认值
             enable_nsfw: 是否启用 NSFW
             sso: 指定 SSO，否则从池中获取
             max_retries: 最大重试次数 (用于轮询不同 SSO)
@@ -130,6 +188,12 @@ class GrokImagineClient:
         Returns:
             生成结果，包含图片 URL 列表
         """
+        # 使用配置的默认图片数量
+        if n is None:
+            n = settings.DEFAULT_IMAGE_COUNT
+
+        logger.info(f"[Grok] 请求生成 {n} 张图片 (DEFAULT_IMAGE_COUNT={settings.DEFAULT_IMAGE_COUNT})")
+
         last_error = None
         blocked_retries = 0  # blocked 重试计数
         max_blocked_retries = 3  # blocked 最大重试次数
@@ -139,6 +203,16 @@ class GrokImagineClient:
 
             if not current_sso:
                 return {"success": False, "error": "没有可用的 SSO"}
+
+            # 检查年龄验证状态
+            age_verified = await sso_manager.get_age_verified(current_sso)
+            if age_verified == 0:
+                logger.info(f"[Grok] SSO {current_sso[:20]}... 未进行年龄验证，开始验证...")
+                verify_success = await self._verify_age(current_sso)
+                if verify_success:
+                    await sso_manager.set_age_verified(current_sso, 1)
+                else:
+                    logger.warning(f"[Grok] SSO {current_sso[:20]}... 年龄验证失败，继续尝试生成")
 
             try:
                 result = await self._do_generate(
@@ -457,7 +531,7 @@ class GrokImagineClient:
         self,
         prompt: str,
         aspect_ratio: str = "2:3",
-        n: int = 4,
+        n: int = None,
         enable_nsfw: bool = True,
         sso: Optional[str] = None
     ):
@@ -467,6 +541,10 @@ class GrokImagineClient:
         Yields:
             Dict 包含当前图片进度信息
         """
+        # 使用配置的默认图片数量
+        if n is None:
+            n = settings.DEFAULT_IMAGE_COUNT
+
         queue: asyncio.Queue = asyncio.Queue()
         done = asyncio.Event()
 
