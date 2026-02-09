@@ -8,6 +8,8 @@ Grok 图片生成 API 代理网关，将 Grok Imagine 封装为 OpenAI 兼容的
 
 - **OpenAI 兼容 API** - 提供 `/v1/images/generations` 和 `/v1/chat/completions` 接口
 - **WebSocket 直连** - 直接与 Grok 服务通信，无需 Playwright/Selenium
+- **自动年龄验证** - 首次使用自动完成成人年龄认证，无需手动操作
+- **自动 NSFW 模式** - 自动开启 NSFW 内容生成支持
 - **多 SSO 管理** - 支持多账号轮询，内置多种轮询策略
 - **图片缓存** - 自动保存生成的图片，支持画廊预览
 - **Redis 支持** - 可选的分布式会话持久化
@@ -30,9 +32,22 @@ your-sso-token-1
 your-sso-token-2
 ```
 
-### 3. 配置环境变量（可选）
+### 3. 获取 cf_clearance（重要）
 
-首次运行会自动生成 `.env` 配置文件，主要配置项：
+`cf_clearance` 是 Cloudflare 验证 cookie，用于自动完成年龄验证。获取方法：
+
+1. 使用浏览器访问 https://grok.com 并登录
+2. 按 F12 打开开发者工具
+3. 切换到 **Application**（应用程序）标签页
+4. 左侧选择 **Cookies** -> `https://grok.com`
+5. 找到 `cf_clearance` 并复制其值
+6. 将值填入 `.env` 文件的 `CF_CLEARANCE` 配置项
+
+> **注意**：`cf_clearance` 有过期时间，如果年龄验证失败需要重新获取。
+
+### 4. 配置环境变量
+
+复制 `.env.example` 为 `.env` 并编辑：
 
 ```env
 # 服务器配置
@@ -43,6 +58,9 @@ DEBUG=false
 # API 密钥保护
 API_KEY=your-secure-api-key-here
 
+# Cloudflare 验证（必填，用于自动年龄验证）
+CF_CLEARANCE=your-cf-clearance-cookie-here
+
 # 代理配置（可选，支持 HTTP/HTTPS/SOCKS4/SOCKS5）
 # PROXY_URL=http://127.0.0.1:7890
 # PROXY_URL=socks5://127.0.0.1:1080
@@ -52,13 +70,22 @@ SSO_ROTATION_STRATEGY=hybrid
 SSO_DAILY_LIMIT=10
 ```
 
-### 4. 启动服务
+### 5. 启动服务
 
 ```bash
 python main.py
 ```
 
 服务将在 `http://localhost:9563` 启动。
+
+## 自动验证说明
+
+本项目支持自动完成以下验证：
+
+1. **年龄验证**：首次使用每个 SSO Token 时，会自动调用 Grok 的年龄验证接口设置生日（需要配置 `CF_CLEARANCE`）
+2. **NSFW 模式**：请求时自动开启 NSFW 内容生成支持
+
+验证状态会被缓存（本地 JSON 或 Redis），每个 SSO Token 只需验证一次。
 
 ## API 接口
 
@@ -135,6 +162,7 @@ curl http://localhost:9563/health
 | `PORT` | `9563` | 服务端口 |
 | `DEBUG` | `false` | 调试模式 |
 | `API_KEY` | - | API 访问密钥 |
+| `CF_CLEARANCE` | - | Cloudflare cookie（用于年龄验证） |
 | `PROXY_URL` | - | 代理地址 |
 | `SSO_FILE` | `key.txt` | SSO 文件路径 |
 | `BASE_URL` | - | 外部访问地址 |
@@ -151,6 +179,7 @@ curl http://localhost:9563/health
 - FastAPI
 - uvicorn
 - aiohttp + aiohttp-socks (WebSocket 代理支持)
+- curl_cffi (浏览器模拟，用于年龄验证)
 - pydantic
 - redis (可选)
 

@@ -4,24 +4,44 @@ Grok 图片生成 API 代理网关，将 Grok Imagine 封装为 OpenAI 兼容的
 使用 WebSocket 直连 Grok，无需浏览器自动化，最小化资源占用。
 """
 
+import time
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.imagine import router as imagine_router
 from app.api.chat import router as chat_router
 from app.api.admin import router as admin_router
 from app.core.config import settings
-from app.core.logger import logger
+from app.core.logger import logger, get_uvicorn_log_config
 from app.services.sso_manager import sso_manager
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """请求日志中间件"""
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        logger.info(f"[Request] {request.method} {request.url.path}")
+
+        response = await call_next(request)
+
+        duration = time.time() - start_time
+        logger.info(f"[Response] {request.method} {request.url.path} -> {response.status_code} ({duration:.2f}s)")
+        return response
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
+    # 在子进程中重新初始化日志
+    from app.core.logger import setup_logger
+    setup_logger()
+
+    logger.info("=" * 50)
     logger.info("Grok Imagine API Gateway 启动中...")
 
     # 显示配置信息
@@ -57,6 +77,9 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+# 请求日志中间件（放在最前面）
+app.add_middleware(RequestLoggingMiddleware)
 
 # CORS 中间件
 app.add_middleware(
@@ -238,5 +261,6 @@ if __name__ == "__main__":
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
+        log_config=get_uvicorn_log_config()
     )

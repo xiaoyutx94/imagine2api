@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     HTTP_PROXY: Optional[str] = None
     HTTPS_PROXY: Optional[str] = None
 
+    # Cloudflare 验证 cookie (用于年龄验证请求)
+    CF_CLEARANCE: str = ""
+
+    # 默认图片生成数量 (1-4)
+    DEFAULT_IMAGE_COUNT: int = 4
+
     # SSO 配置
     SSO_FILE: Path = ROOT_DIR / "key.txt"
 
@@ -106,6 +112,14 @@ API_KEY=your-secure-api-key-here
 # 支持 http/https/socks5 代理，取消注释并填写你的代理地址
 # PROXY_URL=http://127.0.0.1:7890
 # PROXY_URL=socks5://127.0.0.1:1080
+
+# ============ Cloudflare 验证 ============
+# cf_clearance cookie，用于年龄验证请求，从浏览器获取
+CF_CLEARANCE=
+
+# ============ 图片生成配置 ============
+# 默认图片生成数量 (1-4)
+DEFAULT_IMAGE_COUNT=4
 
 # ============ SSO 配置 ============
 # SSO 密钥文件路径 (每行一个 token)

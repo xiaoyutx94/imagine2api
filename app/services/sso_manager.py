@@ -34,6 +34,7 @@ class KeyUsage:
     last_used: float = 0        # 最后使用时间戳
     first_used: float = 0       # 首次使用时间戳
     failed: bool = False        # 是否标记为失败
+    age_verified: int = 0       # 年龄是否验证过 (0=未验证, 1=已验证)
 
 
 class SSOManager:
@@ -336,6 +337,22 @@ class SSOManager:
             if sso in self._usage:
                 self._usage[sso].failed = False
                 self._save_state()
+
+    async def get_age_verified(self, sso: str) -> int:
+        """获取年龄验证状态 (0=未验证, 1=已验证)"""
+        async with self._lock:
+            if sso in self._usage:
+                return self._usage[sso].age_verified
+            return 0
+
+    async def set_age_verified(self, sso: str, verified: int = 1):
+        """设置年龄验证状态"""
+        async with self._lock:
+            if sso not in self._usage:
+                self._usage[sso] = KeyUsage()
+            self._usage[sso].age_verified = verified
+            self._save_state()
+            logger.info(f"[SSO] 设置年龄验证状态: {sso[:20]}... -> {verified}")
 
     def get_status(self) -> dict:
         """获取详细状态"""

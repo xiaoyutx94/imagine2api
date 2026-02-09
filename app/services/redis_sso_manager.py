@@ -116,6 +116,7 @@ class RedisSSOManager:
                 pipe.hsetnx(usage_key, "count", 0)
                 pipe.hsetnx(usage_key, "last_used", 0)
                 pipe.hsetnx(usage_key, "first_used", int(time.time()))
+                pipe.hsetnx(usage_key, "age_verified", 0)
             await pipe.execute()
 
             self._initialized = True
@@ -357,6 +358,20 @@ class RedisSSOManager:
         """标记 SSO 为成功（从失败列表移除）"""
         r = await self._get_redis()
         await r.srem(self.FAILED_SET, sso)
+
+    async def get_age_verified(self, sso: str) -> int:
+        """获取年龄验证状态 (0=未验证, 1=已验证)"""
+        r = await self._get_redis()
+        usage_key = self._usage_key(sso)
+        age_verified = await r.hget(usage_key, "age_verified")
+        return int(age_verified) if age_verified else 0
+
+    async def set_age_verified(self, sso: str, verified: int = 1):
+        """设置年龄验证状态"""
+        r = await self._get_redis()
+        usage_key = self._usage_key(sso)
+        await r.hset(usage_key, "age_verified", verified)
+        logger.info(f"[SSO-Redis] 设置年龄验证状态: {sso[:20]}... -> {verified}")
 
     async def get_status(self) -> Dict[str, Any]:
         """获取详细状态"""

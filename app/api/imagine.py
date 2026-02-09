@@ -21,7 +21,7 @@ class OpenAIImageRequest(BaseModel):
     """OpenAI 兼容的图片生成请求"""
     prompt: str = Field(..., description="图片描述提示词", min_length=1)
     model: Optional[str] = Field("grok-2-image", description="模型名称")
-    n: Optional[int] = Field(4, description="生成数量", ge=1, le=4)
+    n: Optional[int] = Field(None, description="生成数量，不指定则使用默认配置", ge=1, le=4)
     size: Optional[str] = Field("1024x1536", description="图片尺寸")
     response_format: Optional[str] = Field("url", description="响应格式: url 或 b64_json")
     stream: Optional[bool] = Field(False, description="是否流式返回进度")
